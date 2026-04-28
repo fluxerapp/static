@@ -17,13 +17,8 @@ jobs:
     permissions:
       contents: read
     env:
-      RCLONE_CONFIG_OVH_TYPE: s3
-      RCLONE_CONFIG_OVH_PROVIDER: Other
-      RCLONE_CONFIG_OVH_REGION: us-east-1
-      RCLONE_CONFIG_OVH_ENDPOINT: https://s3.us-east-va.io.cloud.ovh.us
-      RCLONE_CONFIG_OVH_ACL: private
-      RCLONE_CONFIG_OVH_ACCESS_KEY_ID: ${{ secrets.OVH_S3_ACCESS_KEY_ID }}
-      RCLONE_CONFIG_OVH_SECRET_ACCESS_KEY: ${{ secrets.OVH_S3_SECRET_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       RCLONE_BUCKET: fluxer-static
     steps:
       - name: Checkout repository
@@ -31,13 +26,32 @@ jobs:
 
       - name: Install rclone
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes rclone
+          if ! command -v rclone >/dev/null 2>&1; then
+            curl -fsSL https://rclone.org/install.sh | sudo bash
+          fi
 
-      - name: Sync repository to OVH bucket
+      - name: Configure rclone for Vultr Object Storage
         run: |
-          rclone sync . "ovh:${RCLONE_BUCKET}" \
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << 'RCLONEEOF'
+          [vultrobjects]
+          type = s3
+          provider = Other
+          env_auth = true
+          endpoint = https://ewr1.vultrobjects.com
+          acl = public-read
+          RCLONEEOF
+
+      - name: Sync repository to Vultr bucket
+        run: |
+          rclone sync . "vultrobjects:${RCLONE_BUCKET}" \
             --create-empty-src-dirs \
             --exclude ".git/**" \
             --exclude ".github/**" \
-            --exclude "assets/**"
+            --exclude "assets/**" \
+            --transfers 32 \
+            --checkers 10 \
+            --fast-list \
+            --s3-upload-concurrency 8 \
+            --s3-chunk-size 32M \
+            -v
